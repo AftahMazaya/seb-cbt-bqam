@@ -4,7 +4,6 @@ Pembuat berkas konfigurasi Safe Exam Browser (.seb) untuk CBT BQAM.
 
     python3 buat-seb.py                      # tanya sandi keluar, tulis repo/cbt-bqam.seb
     python3 buat-seb.py --sandi-acak         # buat sandi keluar acak dan tampilkan sekali
-    python3 buat-seb.py --berakhir "2026-10-20 15:00"   # sekaligus perbarui jadwal hapus
 
 Yang diatur, dan alasannya:
   * Layar: maksimal 1 layar, layar eksternal DIIZINKAN, dan kegagalan membaca
@@ -160,7 +159,6 @@ def bungkus(xml: str) -> bytes:
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--sandi-acak", action="store_true", help="buat sandi keluar acak")
-    ap.add_argument("--berakhir", help='jadwal hapus otomatis, WIB, mis. "2026-10-20 15:00"')
     ap.add_argument("--keluar", default=os.path.join(REPO, "cbt-bqam.seb"))
     a = ap.parse_args()
 
@@ -184,19 +182,22 @@ def main():
         f.write(data)
     sidik = hashlib.sha256(data).hexdigest()
 
-    # jadwal.json: dibaca skrip pemasang di tiap PC
+    # jadwal.json: nama berkas dan sidiknya, dibaca skrip pemasang di tiap PC
     jp = os.path.join(os.path.dirname(a.keluar), "jadwal.json")
     j = {}
     if os.path.exists(jp):
         with open(jp, encoding="utf-8") as f:
             j = json.load(f)
-    if a.berakhir:
-        t = datetime.strptime(a.berakhir, "%Y-%m-%d %H:%M").replace(tzinfo=WIB)
-        j["berakhir"] = t.isoformat()
-    j.setdefault("berakhir", (datetime.now(WIB) + timedelta(days=7)).replace(hour=17, minute=0, second=0, microsecond=0).isoformat())
+    j.pop("berakhir", None)   # peninggalan versi lama (hapus otomatis), tidak dipakai lagi
     j["berkas"] = os.path.basename(a.keluar)
     j["sha256"] = sidik
     j["nama_pintasan"] = j.get("nama_pintasan", "Ujian CBT BQAM")
+    # Ikon desktop (logo pesantren), bila ada di samping berkas .seb.
+    ikon = os.path.join(os.path.dirname(a.keluar), "cbt-bqam.ico")
+    if os.path.exists(ikon):
+        with open(ikon, "rb") as f:
+            j["ikon"] = "cbt-bqam.ico"
+            j["ikon_sha256"] = hashlib.sha256(f.read()).hexdigest()
     j["diperbarui"] = datetime.now(WIB).replace(microsecond=0).isoformat()
     with open(jp, "w", encoding="utf-8") as f:
         json.dump(j, f, indent=2, ensure_ascii=False)
@@ -204,7 +205,6 @@ def main():
 
     print(f"Tertulis : {a.keluar} ({len(data)} byte)")
     print(f"SHA-256  : {sidik}")
-    print(f"Hapus    : {j['berakhir']}  (jadwal.json)")
     if a.sandi_acak:
         print(f"\nSANDI KELUAR SEB: {sandi}\nCatat sekarang dan bagikan hanya ke pengawas. Tidak ditampilkan lagi.")
 

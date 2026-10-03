@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
   PASANG SEB - CBT Pondok Pesantren Baitul Qur'an Al Jahra
   ---------------------------------------------------------
@@ -6,18 +6,19 @@
     1. memasang Safe Exam Browser bila belum ada (atau versinya terlalu lama),
     2. mengunduh konfigurasi ujian (.seb) dari repo GitHub panitia dan
        memeriksa sidik SHA-256-nya,
-    3. membuat ikon "Ujian CBT BQAM" di desktop semua pengguna,
-    4. memasang tugas terjadwal yang memperbarui konfigurasi bila panitia
-       mengubahnya, lalu MENGHAPUS konfigurasi dan ikon begitu jadwal ujian
-       berakhir (SEB sendiri tetap terpasang).
+    3. membuat ikon "Ujian CBT BQAM" di desktop semua pengguna.
+
+  Konfigurasi hanya berisi alamat login Moodle dan aturan penguncian, jadi
+  dibiarkan terpasang untuk ujian berikutnya. Menjalankan skrip ini lagi
+  mengambil versi terbaru dari repo.
 
   Cara pakai: klik dua kali PASANG-SEB.cmd (akan meminta izin Administrator).
     pasang-seb.ps1             pasang / perbarui
     pasang-seb.ps1 -Periksa    tampilkan keadaan PC ini
-    pasang-seb.ps1 -Hapus      hapus konfigurasi, ikon, dan tugas sekarang juga
+    pasang-seb.ps1 -Hapus      hapus konfigurasi dan ikon (SEB tetap terpasang)
     pasang-seb.ps1 -Diam       tanpa "tekan Enter" di akhir (untuk banyak PC)
 
-  Tanpa internet: taruh SEB_*_SetupBundle.exe, cbt-bqam.seb, dan jadwal.json
+  Tanpa internet: taruh SEB_*_SetupBundle.exe, cbt-bqam.seb, cbt-bqam.ico, dan jadwal.json
   di folder yang sama dengan skrip ini (misalnya di flashdisk).
 #>
 param([switch]$Periksa, [switch]$Hapus, [switch]$Diam)
@@ -31,7 +32,9 @@ $SEB_MIN     = [version]'3.10.0'
 $SEB_BUNDLE  = 'SEB_3.10.2.920_SetupBundle.exe'
 $SEB_URL     = "https://github.com/SafeExamBrowser/seb-win-refactoring/releases/download/v3.10.2/$SEB_BUNDLE"
 $DIR         = Join-Path $env:ProgramData 'CBT-BQAM'
-$TUGAS       = 'CBT BQAM - Perbarui atau hapus konfigurasi SEB'
+# Tugas terjadwal dari versi lama skrip ini (penghapusan otomatis). Dibuang
+# bila masih ada.
+$TUGAS_LAMA  = 'CBT BQAM - Perbarui atau hapus konfigurasi SEB'
 # --------------------------------------------------------------------------
 
 $SINI = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
@@ -66,8 +69,7 @@ $LOG = Join-Path $DIR 'log.txt'
 function Catat([string]$teks) { Add-Content -Path $LOG -Value ("{0:yyyy-MM-dd HH:mm:ss}  {1}" -f (Get-Date), $teks) -Encoding UTF8 }
 
 $SEB_CFG   = Join-Path $DIR 'cbt-bqam.seb'
-$JADWAL    = Join-Path $DIR 'jadwal.json'
-$PENJAGA   = Join-Path $DIR 'penjaga.ps1'
+$IKON      = Join-Path $DIR 'cbt-bqam.ico'
 $DESKTOP   = [Environment]::GetFolderPath('CommonDesktopDirectory')
 
 function Cari-SEB {
@@ -89,25 +91,20 @@ function Ambil-Json([string]$url) {
     $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30 -Headers @{ 'Cache-Control' = 'no-cache' }
     return ($r.Content | ConvertFrom-Json)
 }
-function Waktu($iso) {
-    # PowerShell 7 sudah mengubah teks ISO menjadi DateTime; 5.1 belum.
-    if ($iso -is [datetime]) { return [DateTimeOffset]$iso }
-    return [DateTimeOffset]::Parse([string]$iso, [Globalization.CultureInfo]::InvariantCulture)
-}
 
 function Pintasan-Path([string]$nama) { Join-Path $DESKTOP ("$nama.lnk") }
 
-function Hapus-Semua([string]$sebab) {
-    $nama = 'Ujian CBT BQAM'
-    if (Test-Path $JADWAL) { try { $nama = (Get-Content $JADWAL -Raw -Encoding UTF8 | ConvertFrom-Json).nama_pintasan } catch {} }
-    foreach ($f in @($SEB_CFG, (Pintasan-Path $nama), $JADWAL, $PENJAGA)) {
-        if ($f -and (Test-Path $f)) { Remove-Item $f -Force -ErrorAction SilentlyContinue; Tulis "  dihapus: $f" }
+# Sisa versi lama: tugas penghapus otomatis dan skripnya.
+function Buang-Sisa-Lama {
+    if (Get-ScheduledTask -TaskName $TUGAS_LAMA -ErrorAction SilentlyContinue) {
+        Unregister-ScheduledTask -TaskName $TUGAS_LAMA -Confirm:$false
+        Tulis '  tugas penghapus otomatis versi lama dibuang'
+        Catat 'tugas penghapus otomatis versi lama dibuang'
     }
-    if (Get-ScheduledTask -TaskName $TUGAS -ErrorAction SilentlyContinue) {
-        Unregister-ScheduledTask -TaskName $TUGAS -Confirm:$false
-        Tulis "  tugas terjadwal dihapus"
+    foreach ($f in @('penjaga.ps1', 'jadwal.json')) {
+        $p = Join-Path $DIR $f
+        if (Test-Path $p) { Remove-Item $p -Force -ErrorAction SilentlyContinue }
     }
-    Catat "hapus: $sebab"
 }
 
 # ---------------- -Periksa ----------------
@@ -115,21 +112,29 @@ if ($Periksa) {
     Judul 'Keadaan PC ini'
     $exe = Cari-SEB
     if ($exe) { Tulis ("  SEB         : {0}  (versi {1})" -f $exe, (Versi-SEB $exe)) Green } else { Tulis '  SEB         : BELUM TERPASANG' Yellow }
-    Tulis ("  Konfigurasi : {0}" -f $(if (Test-Path $SEB_CFG) { $SEB_CFG } else { 'tidak ada' }))
-    if (Test-Path $JADWAL) {
-        $j = Get-Content $JADWAL -Raw -Encoding UTF8 | ConvertFrom-Json
-        Tulis ("  Dihapus pada: {0}" -f ((Waktu $j.berakhir).LocalDateTime))
-        Tulis ("  Ikon        : {0}" -f $(if (Test-Path (Pintasan-Path $j.nama_pintasan)) { 'ada' } else { 'tidak ada' }))
+    if (Test-Path $SEB_CFG) {
+        Tulis ("  Konfigurasi : {0}  (sidik {1})" -f $SEB_CFG, (Get-FileHash $SEB_CFG -Algorithm SHA256).Hash.Substring(0, 12).ToLower())
+    } else { Tulis '  Konfigurasi : tidak ada' Yellow }
+    $ikon = Get-ChildItem -Path $DESKTOP -Filter '*.lnk' -ErrorAction SilentlyContinue |
+            Where-Object { (New-Object -ComObject WScript.Shell).CreateShortcut($_.FullName).Arguments -like "*$SEB_CFG*" }
+    Tulis ("  Ikon        : {0}" -f $(if ($ikon) { ($ikon | ForEach-Object Name) -join ', ' } else { 'tidak ada' }))
+    if (Get-ScheduledTask -TaskName $TUGAS_LAMA -ErrorAction SilentlyContinue) {
+        Tulis '  Tugas lama  : masih ada (jalankan PASANG-SEB.cmd sekali lagi untuk membuangnya)' Yellow
     }
-    $t = Get-ScheduledTask -TaskName $TUGAS -ErrorAction SilentlyContinue
-    Tulis ("  Tugas       : {0}" -f $(if ($t) { $t.State } else { 'tidak ada' }))
     Selesai 0
 }
 
 # ---------------- -Hapus ----------------
 if ($Hapus) {
     Judul 'Menghapus konfigurasi ujian dari PC ini'
-    Hapus-Semua 'diminta panitia (-Hapus)'
+    Get-ChildItem -Path $DESKTOP -Filter '*.lnk' -ErrorAction SilentlyContinue | ForEach-Object {
+        if ((New-Object -ComObject WScript.Shell).CreateShortcut($_.FullName).Arguments -like "*$SEB_CFG*") {
+            Remove-Item $_.FullName -Force; Tulis "  dihapus: $($_.FullName)"
+        }
+    }
+    foreach ($f in @($SEB_CFG, $IKON)) { if (Test-Path $f) { Remove-Item $f -Force; Tulis "  dihapus: $f" } }
+    Buang-Sisa-Lama
+    Catat 'hapus: diminta panitia (-Hapus)'
     Tulis '  Selesai. Safe Exam Browser tetap terpasang.' Green
     Selesai 0
 }
@@ -139,8 +144,10 @@ Write-Host '============================================================' -Foreg
 Write-Host '  PASANG SEB - CBT Baitul Qur''an Al Jahra' -ForegroundColor Cyan
 Write-Host '============================================================' -ForegroundColor Cyan
 
-# ---------------- 1. jadwal ----------------
-Judul '1. Membaca jadwal dari repo panitia'
+# ---------------- 1. daftar berkas ----------------
+# jadwal.json di repo memuat nama berkas .seb dan sidik SHA-256-nya.
+# (Kolom "berakhir" peninggalan versi lama tidak dipakai lagi.)
+Judul '1. Membaca daftar berkas dari repo panitia'
 $jadwal = $null
 try {
     $jadwal = Ambil-Json "$REPO_RAW/jadwal.json"
@@ -152,14 +159,8 @@ try {
         Tulis "  GitHub tidak terjangkau, memakai jadwal.json di folder ini" Yellow
     }
 }
-if (-not $jadwal -or -not $jadwal.berakhir -or -not $jadwal.sha256) {
+if (-not $jadwal -or -not $jadwal.berkas -or -not $jadwal.sha256) {
     Tulis '  BERHENTI: jadwal.json tidak dapat dibaca. Periksa internet, atau salin jadwal.json ke folder skrip ini.' Red
-    Selesai 1
-}
-$akhir = Waktu $jadwal.berakhir
-Tulis ("  konfigurasi akan dihapus otomatis: {0:dddd, dd MMMM yyyy HH:mm}" -f $akhir.LocalDateTime)
-if ([DateTimeOffset]::Now -ge $akhir) {
-    Tulis '  BERHENTI: jadwal ujian di repo sudah lewat. Panitia perlu memperbarui jadwal.json dulu.' Red
     Selesai 1
 }
 
@@ -233,11 +234,31 @@ if ($sidik -ne $jadwal.sha256.ToLower()) {
     Selesai 1
 }
 Move-Item $sementara $SEB_CFG -Force
-$jadwal | ConvertTo-Json | Set-Content -Path $JADWAL -Encoding UTF8
+# Siswa boleh membaca konfigurasi, tapi tidak boleh mengganti atau menghapusnya.
+& icacls.exe $DIR /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' | Out-Null
 Tulis "  tersimpan: $SEB_CFG (dari $asal, sidik cocok)" Green
 
 # ---------------- 4. ikon desktop ----------------
 Judul '4. Ikon di desktop'
+# Logo pesantren dari repo. Gagal diunduh atau sidiknya tidak cocok: pakai
+# ikon bawaan SEB saja, pemasangan tetap lanjut.
+$gambar = "$exe,0"
+if ($jadwal.ikon -and $jadwal.ikon_sha256) {
+    $tmpIkon = Join-Path $env:TEMP ('cbt-bqam-' + [guid]::NewGuid().ToString('N') + '.ico')
+    try {
+        Invoke-WebRequest -Uri "$REPO_RAW/$($jadwal.ikon)" -OutFile $tmpIkon -UseBasicParsing -TimeoutSec 60
+    } catch {
+        $lokal = Join-Path $SINI $jadwal.ikon
+        if (Test-Path $lokal) { Copy-Item $lokal $tmpIkon -Force }
+    }
+    if ((Test-Path $tmpIkon) -and (Get-FileHash $tmpIkon -Algorithm SHA256).Hash.ToLower() -eq $jadwal.ikon_sha256.ToLower()) {
+        Move-Item $tmpIkon $IKON -Force
+        $gambar = "$IKON,0"
+    } else {
+        if (Test-Path $tmpIkon) { Remove-Item $tmpIkon -Force }
+        Tulis '  logo tidak dapat diambil, memakai ikon bawaan SEB' Yellow
+    }
+}
 $nama = if ($jadwal.nama_pintasan) { $jadwal.nama_pintasan } else { 'Ujian CBT BQAM' }
 $lnk = Pintasan-Path $nama
 $ws = New-Object -ComObject WScript.Shell
@@ -245,66 +266,14 @@ $sc = $ws.CreateShortcut($lnk)
 $sc.TargetPath = $exe
 $sc.Arguments = "`"$SEB_CFG`""
 $sc.WorkingDirectory = Split-Path $exe
-$sc.IconLocation = "$exe,0"
+$sc.IconLocation = $gambar
 $sc.Description = 'Buka ujian CBT di Safe Exam Browser'
 $sc.Save()
 Tulis "  dibuat: $lnk" Green
 
-# ---------------- 5. penjaga terjadwal ----------------
-Judul '5. Penghapusan otomatis sesuai jadwal'
-# Penjaga TIDAK pernah mengunduh atau menjalankan skrip. Ia hanya membaca
-# jadwal.json, mengganti berkas .seb bila panitia memperbaruinya (sidiknya
-# diperiksa), dan menghapus konfigurasi + ikon setelah jadwal berakhir.
-$isiPenjaga = @'
-$ErrorActionPreference = 'SilentlyContinue'
-try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
-$REPO_RAW = '__REPO__'; $DIR = '__DIR__'; $TUGAS = '__TUGAS__'
-$CFG = Join-Path $DIR 'cbt-bqam.seb'; $JADWAL = Join-Path $DIR 'jadwal.json'; $LOG = Join-Path $DIR 'log.txt'
-function Catat($t) { Add-Content -Path $LOG -Value ("{0:yyyy-MM-dd HH:mm:ss}  penjaga: {1}" -f (Get-Date), $t) -Encoding UTF8 }
-$j = $null
-if (Test-Path $JADWAL) { $j = Get-Content $JADWAL -Raw -Encoding UTF8 | ConvertFrom-Json }
-try {
-    $baru = (Invoke-WebRequest -Uri "$REPO_RAW/jadwal.json" -UseBasicParsing -TimeoutSec 20 -Headers @{ 'Cache-Control' = 'no-cache' }).Content | ConvertFrom-Json
-    if ($baru.berakhir -and $baru.sha256) {
-        if ($j -and $baru.sha256 -ne $j.sha256) {
-            $tmp = "$CFG.baru"
-            Invoke-WebRequest -Uri "$REPO_RAW/$($baru.berkas)" -OutFile $tmp -UseBasicParsing -TimeoutSec 60
-            if ((Get-FileHash $tmp -Algorithm SHA256).Hash.ToLower() -eq $baru.sha256.ToLower()) {
-                Move-Item $tmp $CFG -Force; Catat 'konfigurasi diperbarui dari repo'
-            } else { Remove-Item $tmp -Force; Catat 'konfigurasi baru ditolak: sidik tidak cocok'; $baru.sha256 = $j.sha256 }
-        }
-        if (-not $j -or $baru.berakhir -ne $j.berakhir) { Catat "jadwal: $($baru.berakhir)" }
-        $j = $baru
-        $j | ConvertTo-Json | Set-Content -Path $JADWAL -Encoding UTF8
-    }
-} catch {}
-if (-not $j) { exit 0 }
-if ([DateTimeOffset]::Now -lt [DateTimeOffset]::Parse($j.berakhir, [Globalization.CultureInfo]::InvariantCulture)) { exit 0 }
-$lnk = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) ("$($j.nama_pintasan).lnk")
-foreach ($f in @($CFG, $lnk, $JADWAL)) { if (Test-Path $f) { Remove-Item $f -Force } }
-Catat "jadwal berakhir ($($j.berakhir)), konfigurasi dan ikon dihapus"
-Unregister-ScheduledTask -TaskName $TUGAS -Confirm:$false
-Remove-Item $MyInvocation.MyCommand.Path -Force
-'@
-$isiPenjaga = $isiPenjaga.Replace('__REPO__', $REPO_RAW).Replace('__DIR__', $DIR).Replace('__TUGAS__', $TUGAS)
-Set-Content -Path $PENJAGA -Value $isiPenjaga -Encoding UTF8
-
-# Hanya Administrator dan SYSTEM yang boleh mengubah folder ini: penjaga
-# berjalan sebagai SYSTEM, jadi skripnya tidak boleh bisa diganti siswa.
-& icacls.exe $DIR /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' | Out-Null
-
-$aksi = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PENJAGA`""
-$pemicu = @(
-    (New-ScheduledTaskTrigger -AtStartup),
-    (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Minutes 15) -RepetitionDuration (New-TimeSpan -Days 3650)),
-    (New-ScheduledTaskTrigger -Once -At $akhir.LocalDateTime)
-)
-$atur = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
-$siapa = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-Register-ScheduledTask -TaskName $TUGAS -Action $aksi -Trigger $pemicu -Settings $atur -Principal $siapa -Force | Out-Null
-Tulis "  tugas terjadwal terpasang: memeriksa repo tiap 15 menit dan saat PC dinyalakan" Green
-Tulis ("  konfigurasi + ikon hilang sendiri setelah {0:dd/MM/yyyy HH:mm}" -f $akhir.LocalDateTime) Green
-Catat "pasang selesai, berakhir $($jadwal.berakhir), sidik $sidik"
+# ---------------- 5. rapikan sisa versi lama ----------------
+Buang-Sisa-Lama
+Catat "pasang selesai, sidik $sidik"
 
 Write-Host ''
 Write-Host '  SIAP. Peserta membuka ujian lewat ikon di desktop:' -ForegroundColor Green

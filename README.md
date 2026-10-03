@@ -14,11 +14,12 @@ Skrip ini:
 - memasang SEB 3.10.2 kalau belum ada atau versinya lama (unduhan ±360 MB,
   tanda tangan digital pemasang diperiksa dulu);
 - mengunduh `cbt-bqam.seb` dan memeriksa sidik SHA-256-nya terhadap `jadwal.json`;
-- membuat ikon di desktop semua pengguna;
-- memasang tugas terjadwal yang tiap 15 menit dan tiap PC dinyalakan
-  memeriksa repo ini: konfigurasi baru diambil otomatis, dan **konfigurasi
-  serta ikon dihapus sendiri setelah waktu `berakhir` di `jadwal.json`**.
-  SEB-nya tetap terpasang untuk ujian berikutnya.
+- membuat ikon **Ujian CBT BQAM** berlogo pesantren (`cbt-bqam.ico`) di desktop
+  semua pengguna.
+
+Konfigurasi hanya berisi alamat login Moodle dan aturan penguncian SEB, jadi
+dibiarkan terpasang untuk ujian berikutnya. Jalankan `PASANG-SEB.cmd` lagi
+kapan saja untuk mengambil versi terbaru.
 
 ### Banyak PC tanpa internet cepat
 
@@ -32,23 +33,21 @@ yang dipakai (sidiknya tetap diperiksa).
 
 | Berkas / perintah | Gunanya |
 |---|---|
-| `HAPUS-KONFIGURASI.cmd` | hapus konfigurasi, ikon, dan tugas sekarang juga |
-| `pasang-seb.ps1 -Periksa` | lihat keadaan PC: versi SEB, konfigurasi, jadwal hapus |
+| `HAPUS-KONFIGURASI.cmd` | hapus konfigurasi dan ikon (SEB tetap terpasang) |
+| `pasang-seb.ps1 -Periksa` | lihat keadaan PC: versi SEB, konfigurasi, ikon |
 | `pasang-seb.ps1 -Diam` | tanpa "tekan Enter" di akhir |
 
 ## Untuk panitia
 
-**Mengubah jadwal hapus:** edit `jadwal.json` langsung di GitHub, ganti
-`berakhir` (format `2026-10-31T17:00:00+07:00`, WIB). PC yang sudah terpasang
-mengikutinya dalam 15 menit. Memasang di PC baru ditolak kalau jadwalnya sudah lewat.
-
 **Mengubah konfigurasi atau sandi keluar:**
 
 ```
-python3 buat-seb.py --sandi-acak --berakhir "2026-10-31 17:00"
+python3 buat-seb.py --sandi-acak
 ```
 
-lalu unggah `cbt-bqam.seb` dan `jadwal.json` yang baru. Sandi keluar hanya
+lalu unggah `cbt-bqam.seb` dan `jadwal.json` yang baru (`jadwal.json` berisi
+sidik berkas `.seb`; pemasang menolak berkas yang sidiknya tidak cocok), dan
+jalankan ulang `PASANG-SEB.cmd` di tiap PC. Sandi keluar hanya
 ditampilkan sekali; repo ini publik, jadi yang tersimpan di berkas hanya
 hash-nya. Jangan pernah mengunggah sandi itu sendiri.
 

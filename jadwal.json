@@ -1,7 +1,8 @@
 {
-  "berakhir": "2026-10-31T17:00:00+07:00",
   "berkas": "cbt-bqam.seb",
   "sha256": "96af413ae816a3cf0d8090f7ce3baf797b5bcd9abb2ebb6e62e603288c8219b1",
   "nama_pintasan": "Ujian CBT BQAM",
-  "diperbarui": "2026-10-03T14:05:42+07:00"
+  "diperbarui": "2026-10-03T14:05:42+07:00",
+  "ikon": "cbt-bqam.ico",
+  "ikon_sha256": "f35fc669371f02e1854a93014b7a2c67e205f4cc8eeb5a83d981d0f344fadf4b"
 }
